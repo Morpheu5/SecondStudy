@@ -332,35 +332,36 @@ namespace SecondStudy {
 								Vec2f otherPos = otherTangible->object.getPos() * Vec2f(getWindowSize());
 								if(thisPos.distance(Vec2f(front.x, front.y)) <= _scale*50.0f && otherPos.distance(Vec2f(back.x, back.y)) <= _scale*50.0f) {
 									_sequencesMutex.lock();
-
-									for(auto sit = _sequences.begin(); sit != _sequences.end(); ++sit) {
-										for(auto lit = sit->begin(); lit != sit->end(); ++lit) {
-											if(*lit == tangible) {
-												// Check if otherTangible is in the same sequence, just before lit
-												for(auto i(lit); i != sit->begin(); --i) {
-													if(*i == otherTangible) {
-														goto omg;
+									[&]() {
+										for(auto sit = _sequences.begin(); sit != _sequences.end(); ++sit) {
+											for(auto lit = sit->begin(); lit != sit->end(); ++lit) {
+												if(*lit == tangible) {
+													// Check if otherTangible is in the same sequence, just before lit
+													for(auto i(lit); i != sit->begin(); --i) {
+														if(*i == otherTangible) {
+															return;
+														}
 													}
-												}
-												// cover the head case because of reverse iterator madness
-												if(*(sit->begin()) == otherTangible) {
-													goto omg;
-												}
-												if(*(sit->begin()) != otherTangible) { // prevents tail-head loops
-													for(auto nsit = _sequences.begin(); nsit != _sequences.end(); ++nsit) {
-														for(auto nlit = nsit->begin(); nlit != nsit->end(); ++nlit) {
-															if(*nlit == otherTangible) {
-																nsit->splice(nlit, *sit, sit->begin(), next(lit));
-																goto omg;
+													// cover the head case because of reverse iterator madness
+													if(*(sit->begin()) == otherTangible) {
+														return;
+													}
+													if(*(sit->begin()) != otherTangible) { // prevents tail-head loops
+														for(auto nsit = _sequences.begin(); nsit != _sequences.end(); ++nsit) {
+															for(auto nlit = nsit->begin(); nlit != nsit->end(); ++nlit) {
+																if(*nlit == otherTangible) {
+																	nsit->splice(nlit, *sit, sit->begin(), next(lit));
+																	return;
+																}
 															}
 														}
 													}
 												}
 											}
 										}
-									}
-omg:
+									}();
 
+									/*
 									int i = 0;
 									console() << endl << "========= " << tangible->object.getFiducialId() << " " << otherTangible->object.getFiducialId();
 									for(auto& seq : _sequences) {
@@ -370,8 +371,9 @@ omg:
 										}
 									}
 									console() << endl;
-
+									*/
 									_sequencesMutex.unlock();
+									
 								}
 							}
 						}
