@@ -1,0 +1,32 @@
+for each t in T
+	N = neighbors(t)
+	if N.size == 0
+		new sequence(t)
+	else if N.size == 1
+		n = N.first
+		if t.next != n
+			if n.isHead
+				t.next = n
+				t.becomeHead
+			else // n must be tail
+				n.next = t
+				t.becomeTail
+	else // N.size > 1
+		n,m = twoClosestNeighbors(t) // n is the closest
+		if !(t.next == n or t.next == m or n.next == t or m.next == t) // t is not in the middle of a sequence longer than 1
+			if n.next != m and m.next != n // t is between two distinct sequences
+				if n.isHead
+					t.next = n
+					t.becomeHead
+				else if n.isTail
+					n.next = t
+					t.becomeTail
+				else // n is not head nor tail
+					new sequence(t)
+			else // n and m belong to the same sequence
+				if m.next == n
+					t.next = n
+					m.next = t
+				else
+					t.next = m
+					n.next = t

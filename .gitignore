@@ -1,0 +1,5 @@
+.DS_Store
+*.wav
+*.sdf
+*.opensdf
+vc11/Debug
