@@ -102,6 +102,12 @@ namespace SecondStudy {
 	}
 
 	void TheApp::update() {
+		_sequencesMutex.lock();
+		_sequences.remove_if( [](list<shared_ptr<Tangible>> l) {
+			return l.empty();
+		});
+		_sequencesMutex.unlock();
+
 		for(auto i = _traces.begin(); i != _traces.end(); ) {
 			if(!i->second->isVisible && i->second->isDead()) {
 				_finishedTraces.push_back(i->second);
@@ -213,39 +219,46 @@ namespace SecondStudy {
 			transform.rotate(Vec3f(0.0f, 0.0f, t->object.getAngle()));
 			gl::multModelView(transform);
 
+			/*
+			_sequencesMutex.lock();
+			for(auto& seq : _sequences) {
+				if(t == seq.front()) {
+					gl::color(0,1,0,1);
+					break;
+				} else if(t == seq.back()) {
+					gl::color(0,0,1,1);
+					break;
+				} else {
+					gl::color(1,1,1,1);
+					//break;
+				}
+			}
+			_sequencesMutex.unlock();
+			*/
 			gl::drawSolidRect(Rectf(-20.0f*_scale, -20.0f*_scale, 20.0f*_scale, 20.0f*_scale));
+			gl::color(1,1,1,1);
 
 			gl::drawStrokedCircle(Vec2f(0,0), 50.0f*_scale);
 
 			glLineWidth(2.0f*_scale);
-			if(t->isOn) {
-				gl::drawStrokedRect(t->board*_scale);
+			Rectf board = t->isOn ? t->board : t->icon;
 
-				t->strokesMutex.lock();
-				list<list<Vec2f>> traces = t->strokes;
-				t->strokesMutex.unlock();
+			gl::drawStrokedRect(board*_scale);
+
+			t->strokesMutex.lock();
+			list<list<Vec2f>> traces = t->strokes;
+			t->strokesMutex.unlock();
 				
-				for(auto trace : traces) {
-					vector<Vec2f> v;
-					for(auto p : trace) {
-						Vec2f q(p*t->board.getSize()*_scale + t->board.getCenter()*_scale);
-						v.push_back(q);
-					}
-					if(v.size() > 2) { 
-						BSpline2f l(v, min((int)v.size()-1, 5), false, true);
-						PolyLine2f pl;
-						for(int i = 0; i < (int)floor(v.size()); i++) {
-							float t = (float)i/(float)(v.size());
-							//pl.push_back(l.getPosition(t));
-							//gl::drawSolidCircle(l.getPosition(t), 2.0f*_scale);
-						}
-						glLineWidth(1.0f * _scale);
-						gl::draw(PolyLine2f(v));
-						glLineWidth(1.0f * _scale);
-					}
+			glLineWidth(1.0f * _scale);
+			for(auto trace : traces) {
+				vector<Vec2f> v;
+				for(auto p : trace) {
+					Vec2f q(p*board.getSize()*_scale + board.getCenter()*_scale);
+					v.push_back(q);
 				}
-			} else {
-				gl::drawStrokedRect(t->icon * _scale);
+				if(v.size() > 2) { 
+					gl::draw(PolyLine2f(v));
+				}
 			}
 			glLineWidth(1.0f * _scale);
 
@@ -253,6 +266,7 @@ namespace SecondStudy {
 			// POP MODEL VIEW
 		}
 		
+		// Draws traces as they go
 		for(auto trace : _traces) {
 			auto touchPoints = trace.second->touchPoints;
 			
@@ -279,6 +293,8 @@ namespace SecondStudy {
 		//_params.draw();
 
 		glLineWidth(1.0f * _scale);
+
+		gl::color(1,1,1,1);
 	}
 	
 	void TheApp::resize() {
@@ -410,6 +426,7 @@ namespace SecondStudy {
 									qs.push_back(q);
 								}
 
+								/*
 								if(qs.size() > 2) { // should always be the case
 									BSpline2f l(qs, min((int)qs.size()/1, 3), false, true);
 									float totLength = l.getLength(0, 1);
@@ -424,6 +441,27 @@ namespace SecondStudy {
 										transformedStroke.push_back(lp / (tangible->board.getSize()/Vec2f(640.0f, 480.0f)));
 									}
 								}
+								*/
+
+								vector<Vec2f> tqs;
+								for(auto p : qs) {
+									tqs.push_back(p * Vec2f(640.0f, 480.0f));
+								}
+
+								if(tqs.size() > 2) {
+									BSpline2f l(tqs, min((int)tqs.size(), 3), false, true);
+									float totalLength = l.getLength(0,1);
+									float step = sqrt(totalLength);// 1 + log10(totalLength + 1.0f);
+									console() << "length: " << totalLength << "\tstep: " << step << endl;
+									transformedStroke.push_back((l.getPosition(0.0f) / Vec2f(640.0f, 480.0f)) / ((tangible->board.getSize()/Vec2f(640.0f, 480.0f))));
+									for(float p = 0.0f; p <= totalLength; p += step) {
+										Vec2f lp(l.getPosition(l.getTime(p)));
+										lp /= Vec2f(640.0f, 480.0f);
+										transformedStroke.push_back(lp / (tangible->board.getSize()/Vec2f(640.0f, 480.0f)));
+									}
+									transformedStroke.push_back((l.getPosition(1.0f) / Vec2f(640.0f, 480.0f)) / ((tangible->board.getSize()/Vec2f(640.0f, 480.0f))));
+								}
+
 								tangible->strokesMutex.lock();
 								tangible->strokes.push_back(transformedStroke);
 								tangible->strokesMutex.unlock();
@@ -531,15 +569,17 @@ namespace SecondStudy {
 		_sequences.push_back(l);
 		_sequencesMutex.unlock();
 
+		/*
 		int i = 0;
 		console() << endl << "=========";
-		for(auto& seq : _sequences) {
+		for(auto seq : _sequences) {
 			console() << endl << i++ << " ---" << endl;
-			for(auto& t : seq) {
+			for(auto t : seq) {
 				console() << "   " << t->object.getFiducialId() << " ";
 			}
 		}
 		console() << endl;
+		*/
 	}
 
 	void TheApp::objectUpdated(tuio::Object object) {
@@ -570,7 +610,7 @@ namespace SecondStudy {
 	vector<shared_ptr<Tangible>> TheApp::getNeighbors(shared_ptr<Tangible> t) {
 		//console() << "-- " << t->object.getFiducialId() << endl;
 		vector<shared_ptr<Tangible>> v;
-		for(auto& _o : _objects) {
+		for(auto _o : _objects) {
 			if(_o.first != t->object.getFiducialId()) {
 				shared_ptr<Tangible> o = _o.second;
 				float d = tuioToWorld(t->object.getPos()).distance(tuioToWorld(o->object.getPos()));

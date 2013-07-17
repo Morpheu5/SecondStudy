@@ -26,7 +26,7 @@ public:
 		isVisible = true;
 
 		icon = Rectf(Vec2f(30.0f, -15.0f), Vec2f(60.0f, 15.0f));
-		board = Rectf(Vec2f(30.0f, -60.0f), Vec2f(180.0f, 60.0f));
+		board = Rectf(Vec2f(30.0f, -50.0f), Vec2f(190.0f, 50.0f));
 
 		next = nullptr;
 		prev = nullptr;
