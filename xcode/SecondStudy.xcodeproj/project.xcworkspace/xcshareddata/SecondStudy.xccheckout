@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>IDESourceControlProjectIdentifier</key>
+	<string>7199C939-F419-4051-B27F-C5C60910DAA4</string>
+	<key>IDESourceControlProjectName</key>
+	<string>SecondStudy</string>
+	<key>IDESourceControlProjectOriginsDictionary</key>
+	<dict>
+		<key>516A749F-24E2-469B-90DA-368C595B4A3C</key>
+		<string>ssh://github.com/Morpheu5/SecondStudy.git</string>
+	</dict>
+	<key>IDESourceControlProjectPath</key>
+	<string>xcode/SecondStudy.xcodeproj/project.xcworkspace</string>
+	<key>IDESourceControlProjectRelativeInstallPathDictionary</key>
+	<dict>
+		<key>516A749F-24E2-469B-90DA-368C595B4A3C</key>
+		<string>../../..</string>
+	</dict>
+	<key>IDESourceControlProjectURL</key>
+	<string>ssh://github.com/Morpheu5/SecondStudy.git</string>
+	<key>IDESourceControlProjectVersion</key>
+	<integer>110</integer>
+	<key>IDESourceControlProjectWCCIdentifier</key>
+	<string>516A749F-24E2-469B-90DA-368C595B4A3C</string>
+	<key>IDESourceControlProjectWCConfigurations</key>
+	<array>
+		<dict>
+			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
+			<string>public.vcs.git</string>
+			<key>IDESourceControlWCCIdentifierKey</key>
+			<string>516A749F-24E2-469B-90DA-368C595B4A3C</string>
+			<key>IDESourceControlWCCName</key>
+			<string>SecondStudy</string>
+		</dict>
+	</array>
+</dict>
+</plist>

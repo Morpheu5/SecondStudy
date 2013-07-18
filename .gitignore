@@ -3,3 +3,4 @@
 *.sdf
 *.opensdf
 vc11/Debug
+xcode/build
