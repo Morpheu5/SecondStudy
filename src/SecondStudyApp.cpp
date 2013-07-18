@@ -42,12 +42,14 @@ namespace SecondStudy {
 		mutex _gesturesMutex;
 		
 		thread _gestureProcessor;
+		bool _gestureProcessorShouldStop;
 
 		list<list<shared_ptr<Tangible>>> _sequences;
 		mutex _sequencesMutex;
 
 	public:
 		void setup();
+		void shutdown();
 		void update();
 		void draw();
 		void resize();
@@ -96,11 +98,15 @@ namespace SecondStudy {
 		_s = Vec2f(H, h);
 		_o = Vec2f((w - H)/2.0f, 0.0f);
 
-		//console() << "_s : " << _s << endl << "_o : " << _o << endl;
-
+		_gestureProcessorShouldStop = false;
 		_gestureProcessor = thread(bind(&TheApp::processGestures, this));
 	}
 
+	void TheApp::shutdown() {
+		_gestureProcessorShouldStop = true;
+		_gestureProcessor.join();
+	}
+	
 	void TheApp::update() {
 		_sequencesMutex.lock();
 		_sequences.remove_if( [](list<shared_ptr<Tangible>> l) {
@@ -335,6 +341,9 @@ namespace SecondStudy {
 	void TheApp::processGestures() {
 		// TODO busy waiting is for whimps. Counting semaphore or signal queue, maybe?
 		while(true) {
+			if(_gestureProcessorShouldStop) {
+				return;
+			}
 			if(!_gestures.empty()) {
 				_gesturesMutex.lock();
 				shared_ptr<Gesture> g = _gestures.front();
@@ -433,8 +442,10 @@ namespace SecondStudy {
 									notes.insert(pair<int, int>(q.x, q.y));
 								}
 								for(auto n : notes) {
+									//console() << "(" << n.first << "," << n.second << ") ";
 									tangible->toggle(n);
 								}
+								//console() << endl;
 							}
 						}
 						if(gestureRecognized) {
@@ -636,10 +647,6 @@ namespace SecondStudy {
 		return p * _s;
 	}
 
-	/*Vec2f worldToScreen(Vec2f p) {
-
-	}*/
-
 	vector<shared_ptr<Tangible>> TheApp::getNeighbors(shared_ptr<Tangible> t) {
 		//console() << "-- " << t->object.getFiducialId() << endl;
 		vector<shared_ptr<Tangible>> v;
@@ -666,27 +673,6 @@ namespace SecondStudy {
 		}
 		return v;
 	}
-
-	/*
-	shared_ptr<Tangible> TheApp::getClosestNeighbor(shared_ptr<Tangible> t) {
-		vector<shared_ptr<Tangible>> v = getNeighbors(t);
-		if(v.empty()) {
-			return nullptr;
-		} else if(v.size() == 1) {
-			return v[0];
-		} else {
-			shared_ptr<Tangible> c = v[0];
-			v.erase(v.begin());
-			for(auto o : v) {
-				float d = tuioToWorld(t->object.getPos()).distance(tuioToWorld(o->object.getPos()));
-				if(tuioToWorld(t->object.getPos()).distance(tuioToWorld(c->object.getPos())) > d) {
-					c = o;
-				}
-			}
-			return c;
-		}
-	}
-	*/
 }
 
 CINDER_APP_NATIVE( SecondStudy::TheApp, RendererGl )
