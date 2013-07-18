@@ -236,15 +236,41 @@ namespace SecondStudy {
 			_sequencesMutex.unlock();
 			*/
 			gl::drawSolidRect(Rectf(-20.0f*_scale, -20.0f*_scale, 20.0f*_scale, 20.0f*_scale));
+
+			gl::color(0.2f, 0.2f, 0.2f, 1.0f);
+			gl::drawSolidCircle(Vec2f(0,0), 50.0f*_scale);
 			gl::color(1,1,1,1);
 
-			gl::drawStrokedCircle(Vec2f(0,0), 50.0f*_scale);
-
-			glLineWidth(2.0f*_scale);
 			Rectf board = t->isOn ? t->board : t->icon;
 
-			gl::drawStrokedRect(board*_scale);
+			t->notesMutex.lock();
+			pair<int, int> size = t->size();
+			ColorAf off(0.25f, 0.25f, 0.25f, 1.0f);
+			ColorAf on(0.5f, 0.5f, 0.5f, 1.0f);
+			for(int row = 0; row < size.first; row++) {
+				for(int col = 0; col < size.second; col++) {
+					if(t->notes[row][col]) {
+						gl::color(on);
+					} else {
+						gl::color(off);
+					}
 
+					Vec2f noteRectSize(board.getSize() / Vec2f(size.first, size.second));
+					Rectf noteRect(Vec2f(0.0f, 0.0f), noteRectSize);
+					gl::drawSolidRect((noteRect + noteRectSize*Vec2f(row, col) + board.getUpperLeft()) * _scale);
+					if(t->isOn || true) {
+						gl::color(on * 1.25f);
+						gl::drawStrokedRect((noteRect + noteRectSize*Vec2f(row, col) + board.getUpperLeft()) * _scale);
+					}
+				}
+			}
+			t->notesMutex.unlock();
+
+			gl::color(on * 1.25f);
+			glLineWidth(2.0f*_scale);
+			//gl::drawStrokedRect(board*_scale);
+			gl::color(1,1,1,1);
+			/*
 			t->strokesMutex.lock();
 			list<list<Vec2f>> traces = t->strokes;
 			t->strokesMutex.unlock();
@@ -261,7 +287,7 @@ namespace SecondStudy {
 				}
 			}
 			glLineWidth(1.0f * _scale);
-
+			*/
 			gl::popModelView();
 			// POP MODEL VIEW
 		}
@@ -333,12 +359,87 @@ namespace SecondStudy {
 					}
 				} else if(dynamic_pointer_cast<StrokeGesture>(g) != nullptr) {
 					shared_ptr<StrokeGesture> stroke = dynamic_pointer_cast<StrokeGesture>(g);
-					// Let's see if it's a musical stroke.
-					// Check if both front() and back() are on the same active object's box.
+
 					Vec3f front = Vec3f(stroke->trace.touchPoints.front().getPos() * Vec2f(getWindowSize()));
 					Vec3f back = Vec3f(stroke->trace.touchPoints.back().getPos() * Vec2f(getWindowSize()));
+
+					// safe-guard for preventing multiple stroke gestures to be recognized with the same trace
+					bool gestureRecognized = false;
 					for(auto object : _objects) {
 						shared_ptr<Tangible> tangible = object.second;
+
+						// MUSICAL STROKE
+						if(tangible->isOn) {
+							// Let's see if it's a musical stroke.
+							// Check if both front() and back() are on the same active object's box.
+							Rectf box = tangible->board*_scale;
+							Matrix44f transform;
+							transform.translate(Vec3f(tangible->object.getPos()*_s)+Vec3f(_o.x, _o.y, 0.0f));
+							transform.rotate(Vec3f(0.0f, 0.0f, tangible->object.getAngle()));
+							Vec3f tfront = transform.inverted().transformPoint(front);
+							Vec3f tback = transform.inverted().transformPoint(back);
+							if(box.contains(Vec2f(tfront.x, tfront.y)) && box.contains(Vec2f(tback.x, tback.y))) {
+								// Rejoice in happiness, it's a musical stroke!
+								gestureRecognized = true;
+
+								list<Vec2f> transformedStroke;
+
+								// Let's compute the transform that will normalise the stroke
+								// to the unit box centered in (0.5, 0.5). Heh.
+								Vec2f offset(0,0);
+								//console() << tangible->board.getSize() << tangible->board.getCenter() << endl;
+								offset += tangible->board.getCenter()/480.0f; // DA FLYIN' FUQ?
+								offset.rotate(tangible->object.getAngle());
+								offset *= Vec2f(0.75f, 1.0f);
+								offset += tangible->object.getPos();
+								
+								vector<Vec2f> qs;
+								for(auto p : stroke->trace.touchPoints) {
+									Vec2f q(p.getPos());
+									q -= offset;
+									q /= Vec2f(0.75, 1.0f);
+									q.rotate(-tangible->object.getAngle());
+									q *= Vec2f(0.75, 1.0); // DA FUQ?
+									qs.push_back(q);
+								}
+
+								vector<Vec2f> tqs;
+								for(auto p : qs) {
+									tqs.push_back(p * Vec2f(640.0f, 480.0f));
+								}
+
+								if(tqs.size() > 2) {
+									BSpline2f l(tqs, min((int)tqs.size(), 3), false, true);
+									float totalLength = l.getLength(0,1);
+									float step = sqrt(totalLength);// 1 + log10(totalLength + 1.0f);
+									console() << "length: " << totalLength << "\tstep: " << step << endl;
+									transformedStroke.push_back((l.getPosition(0.0f) / Vec2f(640.0f, 480.0f)) / ((tangible->board.getSize()/Vec2f(640.0f, 480.0f))));
+									for(float p = 0.0f; p <= totalLength; p += step) {
+										Vec2f lp(l.getPosition(l.getTime(p)));
+										lp /= Vec2f(640.0f, 480.0f);
+										transformedStroke.push_back(lp / (tangible->board.getSize()/Vec2f(640.0f, 480.0f)));
+									}
+									transformedStroke.push_back((l.getPosition(1.0f) / Vec2f(640.0f, 480.0f)) / ((tangible->board.getSize()/Vec2f(640.0f, 480.0f))));
+								}
+
+								tangible->strokesMutex.lock();
+								tangible->strokes.push_back(transformedStroke);
+								tangible->strokesMutex.unlock();
+
+								set<pair<int, int>> notes;
+								pair<int, int> size = tangible->size();
+								for(auto& p : transformedStroke) {
+									Vec2i q(Vec2i(Vec2f(size.first, size.second) * (p + Vec2f(0.5f, 0.5f))));
+									notes.insert(pair<int, int>(q.x, q.y));
+								}
+								for(auto n : notes) {
+									tangible->toggle(n);
+								}
+							}
+						}
+						if(gestureRecognized) {
+							goto theMoon;
+						}
 
 						// CONNECTION STROKE
 						for(auto other : _objects) {
@@ -347,6 +448,8 @@ namespace SecondStudy {
 								Vec2f thisPos = tangible->object.getPos() * Vec2f(getWindowSize());
 								Vec2f otherPos = otherTangible->object.getPos() * Vec2f(getWindowSize());
 								if(thisPos.distance(Vec2f(front.x, front.y)) <= _scale*50.0f && otherPos.distance(Vec2f(back.x, back.y)) <= _scale*50.0f) {
+									// We do have a legit connection stroke
+									gestureRecognized = true;
 									_sequencesMutex.lock();
 									[&]() {
 										for(auto sit = _sequences.begin(); sit != _sequences.end(); ++sit) {
@@ -393,85 +496,15 @@ namespace SecondStudy {
 								}
 							}
 						}
-
-
-						// MUSICAL STROKE
-						if(tangible->isOn) {
-							Rectf box = tangible->board*_scale;
-							Matrix44f transform;
-							transform.translate(Vec3f(tangible->object.getPos()*_s)+Vec3f(_o.x, _o.y, 0.0f));
-							transform.rotate(Vec3f(0.0f, 0.0f, tangible->object.getAngle()));
-							Vec3f tfront = transform.inverted().transformPoint(front);
-							Vec3f tback = transform.inverted().transformPoint(back);
-							if(box.contains(Vec2f(tfront.x, tfront.y)) && box.contains(Vec2f(tback.x, tback.y))) {
-								// Rejoice in happiness, it's a musical stroke!
-								list<Vec2f> transformedStroke;
-
-								// Let's compute the transform that will normalise the stroke
-								// to the unit box centered in (0.5, 0.5). Heh.
-								Vec2f offset(0,0);
-								//console() << tangible->board.getSize() << tangible->board.getCenter() << endl;
-								offset += tangible->board.getCenter()/480.0f; // DA FLYIN' FUQ?
-								offset.rotate(tangible->object.getAngle());
-								offset *= Vec2f(0.75f, 1.0f);
-								offset += tangible->object.getPos();
-								
-								vector<Vec2f> qs;
-								for(auto p : stroke->trace.touchPoints) {
-									Vec2f q(p.getPos());
-									q -= offset;
-									q /= Vec2f(0.75, 1.0f);
-									q.rotate(-tangible->object.getAngle());
-									q *= Vec2f(0.75, 1.0); // DA FUQ?
-									qs.push_back(q);
-								}
-
-								/*
-								if(qs.size() > 2) { // should always be the case
-									BSpline2f l(qs, min((int)qs.size()/1, 3), false, true);
-									float totLength = l.getLength(0, 1);
-									// This is a real P.I.T.A., it takes ages if the stroke is too long.
-									float step = 0.05/log10(1+totLength);//0.05/sqrtf(totLength);
-									if(step > 0.5) {
-										step = 0.2;
-									}
-									console() << "Length: " << totLength << " f: " << sqrtf(totLength) << endl << "Step: " << step << endl;
-									for(float p = 0.0f; p <= 1.0f; p += step) {
-										Vec2f lp(l.getPosition(l.getTime(p * totLength)));
-										transformedStroke.push_back(lp / (tangible->board.getSize()/Vec2f(640.0f, 480.0f)));
-									}
-								}
-								*/
-
-								vector<Vec2f> tqs;
-								for(auto p : qs) {
-									tqs.push_back(p * Vec2f(640.0f, 480.0f));
-								}
-
-								if(tqs.size() > 2) {
-									BSpline2f l(tqs, min((int)tqs.size(), 3), false, true);
-									float totalLength = l.getLength(0,1);
-									float step = sqrt(totalLength);// 1 + log10(totalLength + 1.0f);
-									console() << "length: " << totalLength << "\tstep: " << step << endl;
-									transformedStroke.push_back((l.getPosition(0.0f) / Vec2f(640.0f, 480.0f)) / ((tangible->board.getSize()/Vec2f(640.0f, 480.0f))));
-									for(float p = 0.0f; p <= totalLength; p += step) {
-										Vec2f lp(l.getPosition(l.getTime(p)));
-										lp /= Vec2f(640.0f, 480.0f);
-										transformedStroke.push_back(lp / (tangible->board.getSize()/Vec2f(640.0f, 480.0f)));
-									}
-									transformedStroke.push_back((l.getPosition(1.0f) / Vec2f(640.0f, 480.0f)) / ((tangible->board.getSize()/Vec2f(640.0f, 480.0f))));
-								}
-
-								tangible->strokesMutex.lock();
-								tangible->strokes.push_back(transformedStroke);
-								tangible->strokesMutex.unlock();
-							}
+						if(gestureRecognized) {
+							goto theMoon;
 						}
 					}
 				} else {
 					console() << "Unknown gesture..." << endl;
 				}
 			}
+			theMoon: ;
 		}
 	}
 
