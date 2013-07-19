@@ -25,7 +25,7 @@ namespace SecondStudy {
 	class TheApp : public AppNative {
 		float _zoom;
 		float _scale;
-		Vec2f _s, _o;
+		Vec2f _s, _o, _uo;
 		params::InterfaceGl _params;
 		
 		tuio::Client _tuioClient;
@@ -97,6 +97,7 @@ namespace SecondStudy {
 		float H = h/0.75f;
 		_s = Vec2f(H, h);
 		_o = Vec2f((w - H)/2.0f, 0.0f);
+		_uo = Vec2f(0.0f, 0.0f);
 
 		_gestureProcessorShouldStop = false;
 		_gestureProcessor = thread(bind(&TheApp::processGestures, this));
@@ -186,6 +187,8 @@ namespace SecondStudy {
 		
 		_scale = getWindowHeight() / 480.0f;
 
+		Vec2f _do = _o + _uo;
+
 		gl::color(0.2f, 0.2f, 0.2f);
 		glLineWidth(2.0f*_scale);
 		//gl::drawStrokedCircle(getWindowCenter(), 0.5f * getWindowHeight());
@@ -198,8 +201,8 @@ namespace SecondStudy {
 				for(auto it = s.begin(); it != prev(s.end()); ++it) {
 					shared_ptr<Tangible> a = *it;
 					shared_ptr<Tangible> b = *(next(it));
-					Vec2f ap = a->object.getPos() * _s + _o;
-					Vec2f bp = b->object.getPos() * _s + _o;
+					Vec2f ap = a->object.getPos() * _s + _do;
+					Vec2f bp = b->object.getPos() * _s + _do;
 					float w = 1.0f / log(1 + ap.distance(bp) / 100.0f);
 					gl::color(w, w, w, 1.0f); // doubtfully useful on a proper video card...
 					Vec2f d(bp - ap);
@@ -221,7 +224,7 @@ namespace SecondStudy {
 			gl::pushModelView();
 
 			Matrix44f transform;
-			transform.translate(Vec3f((t->object.getPos()*_s)+_o));
+			transform.translate(Vec3f((t->object.getPos()*_s)+_do));
 			transform.rotate(Vec3f(0.0f, 0.0f, t->object.getAngle()));
 			gl::multModelView(transform);
 
@@ -311,7 +314,7 @@ namespace SecondStudy {
 				PolyLine2f pl;
 				for(int i = 0; i < v.size(); i++) {
 					float t = (float)i/(float)v.size();
-					pl.push_back((l.getPosition(t)*_s)+_o);
+					pl.push_back((l.getPosition(t)*_s)+_do);
 				}
 				glLineWidth(2.0f * _scale);
 				gl::draw(pl);
@@ -319,7 +322,7 @@ namespace SecondStudy {
 			}
 			
 			TouchPoint p = touchPoints.back();
-			gl::drawSolidCircle((p.getPos()*_s)+_o , _zoom * _scale * 2.0f);
+			gl::drawSolidCircle((p.getPos()*_s)+_do , _zoom * _scale * 2.0f);
 		}
 		
 		//_params.draw();
@@ -340,7 +343,9 @@ namespace SecondStudy {
 
 	void TheApp::processGestures() {
 		// TODO busy waiting is for whimps. Counting semaphore or signal queue, maybe?
+		Vec2f _do;
 		while(true) {
+			_do = _o + _uo;
 			if(_gestureProcessorShouldStop) {
 				return;
 			}
@@ -357,12 +362,15 @@ namespace SecondStudy {
 					for(auto object : _objects) {
 						shared_ptr<Tangible> t = object.second;
 						Matrix44f transform;
-						transform.translate(Vec3f(t->object.getPos()*_s+_o));
+						transform.translate(Vec3f(t->object.getPos()*_s+_do));
 						transform.rotate(Vec3f(0.0f, 0.0f, t->object.getAngle()));
 						Vec3f tp = transform.inverted().transformPoint(p);
 						// Let's see if the tap hit a box
-						Rectf box = t->isOn ? t->board * _scale : t->icon * _scale;
+						/*Rectf box = t->isOn ? t->board * _scale : t->icon * _scale;
 						if(box.contains(Vec2f(tp.x, tp.y))) {
+							_objects[object.first]->isOn = !t->isOn;
+						}*/
+						if(tp.length() < 50.0f) {
 							_objects[object.first]->isOn = !t->isOn;
 						}
 					}
@@ -383,7 +391,7 @@ namespace SecondStudy {
 							// Check if both front() and back() are on the same active object's box.
 							Rectf box = tangible->board*_scale;
 							Matrix44f transform;
-							transform.translate(Vec3f(tangible->object.getPos()*_s)+Vec3f(_o.x, _o.y, 0.0f));
+							transform.translate(Vec3f(tangible->object.getPos()*_s)+Vec3f(_do.x, _do.y, 0.0f));
 							transform.rotate(Vec3f(0.0f, 0.0f, tangible->object.getAngle()));
 							Vec3f tfront = transform.inverted().transformPoint(front);
 							Vec3f tback = transform.inverted().transformPoint(back);
@@ -548,6 +556,7 @@ namespace SecondStudy {
 				break;
 			}
 			case KeyEvent::KEY_p: {
+				console() << _uo.x << ", " << _uo.y << endl;
 				if(_params.isVisible()) {
 					_params.hide();
 				} else {
@@ -565,6 +574,22 @@ namespace SecondStudy {
 				if(event.isControlDown()) {
 					_zoom += 0.01f;
 				}
+				break;
+			}
+			case KeyEvent::KEY_w: {
+				_uo.y -= event.isControlDown() ? 1.0f : 0.0f;
+				break;
+			}
+			case KeyEvent::KEY_s: {
+				_uo.y += event.isControlDown() ? 1.0f : 0.0f;
+				break;
+			}
+			case KeyEvent::KEY_a: {
+				_uo.x -= event.isControlDown() ? 1.0f : 0.0f;
+				break;
+			}
+			case KeyEvent::KEY_d: {
+				_uo.x += event.isControlDown() ? 1.0f : 0.0f;
 				break;
 			}
 			case KeyEvent::KEY_c: {
