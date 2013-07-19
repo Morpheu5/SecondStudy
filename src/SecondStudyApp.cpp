@@ -332,10 +332,10 @@ namespace SecondStudy {
 	void TheApp::resize() {
 		float w = getWindowWidth();
 		float h = getWindowHeight();
-		_s = Vec2f(h / 0.75f, h);
-		_o = Vec2f((w - h/0.75f)/2.0f, 0.0f);
-
-		//console() << getWindowSize() << endl << _s << endl << _o << endl;
+		_s.y = h;
+		_s.x = _s.y / 0.75f;
+		_o.x = (w-_s.x)/2.0f;
+		_o.y = 0.0f;
 	}
 
 	void TheApp::processGestures() {

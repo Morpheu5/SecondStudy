@@ -3,6 +3,7 @@
 *.sdf
 *.opensdf
 vc11/Debug
+vc11/Release
 xcode/build
 
 # Xcode
