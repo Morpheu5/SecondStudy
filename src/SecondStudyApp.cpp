@@ -1,6 +1,7 @@
 #include "cinder/app/AppNative.h"
 #include "cinder/gl/gl.h"
 #include "cinder/params/Params.h"
+#include "cinder/Timeline.h"
 
 #include "TuioClient.h"
 #include "TuioCursor.h"
@@ -32,10 +33,11 @@ namespace SecondStudy {
 		
 		string _hostname;
 		int _port;
-		//osc::Listener _oscListener;
+		shared_ptr<osc::Sender> _sender;
 		
 		map<int, shared_ptr<Tangible>> _objects;
 		map<int, shared_ptr<TouchTrace>> _traces;
+		mutex _tracesMutex;
 
 		list<shared_ptr<TouchTrace>> _finishedTraces;
 		list<shared_ptr<Gesture>> _gestures;
@@ -46,6 +48,11 @@ namespace SecondStudy {
 
 		list<list<shared_ptr<Tangible>>> _sequences;
 		mutex _sequencesMutex;
+
+		float _noteLength;
+		int _currentNote;
+
+		CueRef _cue;
 
 	public:
 		void setup();
@@ -72,6 +79,8 @@ namespace SecondStudy {
 		//Vec2f tuioToScreen(Vec2f p) { return worldToScreen(tuioToWorld(p)); }
 
 		vector<shared_ptr<Tangible>> getNeighbors(shared_ptr<Tangible> t);
+
+		//void playTangible(int id);
 	};
 
 	void TheApp::setup() {
@@ -101,6 +110,12 @@ namespace SecondStudy {
 
 		_gestureProcessorShouldStop = false;
 		_gestureProcessor = thread(bind(&TheApp::processGestures, this));
+
+		_noteLength = 0.25f;
+		_currentNote = 0;
+
+		_sender = make_shared<osc::Sender>();
+		_sender->setup("localhost", 3000);
 	}
 
 	void TheApp::shutdown() {
@@ -115,6 +130,7 @@ namespace SecondStudy {
 		});
 		_sequencesMutex.unlock();
 
+		_tracesMutex.lock();
 		for(auto i = _traces.begin(); i != _traces.end(); ) {
 			if(!i->second->isVisible && i->second->isDead()) {
 				_finishedTraces.push_back(i->second);
@@ -123,6 +139,7 @@ namespace SecondStudy {
 				++i;
 			}
 		}
+		_tracesMutex.unlock();
 
 		if(_finishedTraces.size() > 0) {
 			processTrace(_finishedTraces.front());
@@ -189,31 +206,28 @@ namespace SecondStudy {
 
 		Vec2f _do = _o + _uo;
 
-		gl::color(0.2f, 0.2f, 0.2f);
-		glLineWidth(2.0f*_scale);
-		//gl::drawStrokedCircle(getWindowCenter(), 0.5f * getWindowHeight());
-		gl::color(1.0f, 1.0f, 1.0f);
-		glLineWidth(1.0f*_scale);
-
 		_sequencesMutex.lock();
 		for(auto& s : _sequences) {
 			if(s.size() > 1) {
 				for(auto it = s.begin(); it != prev(s.end()); ++it) {
 					shared_ptr<Tangible> a = *it;
 					shared_ptr<Tangible> b = *(next(it));
-					Vec2f ap = a->object.getPos() * _s + _do;
-					Vec2f bp = b->object.getPos() * _s + _do;
-					float w = 1.0f / log(1 + ap.distance(bp) / 100.0f);
-					gl::color(w, w, w, 1.0f); // doubtfully useful on a proper video card...
-					Vec2f d(bp - ap);
-					d.normalize();
-					gl::drawVector(Vec3f(ap), Vec3f(ap + d), ap.distance(bp), _scale * w * 5.0f);
+					//if(a->isVisible && b->isVisible) {
+						Vec2f ap = a->object.getPos() * _s + _do;
+						Vec2f bp = b->object.getPos() * _s + _do;
+						float w = 1.0f / log(1 + ap.distance(bp) / 100.0f);
+						gl::color(w, w, w, 1.0f); // doubtfully useful on a proper video card...
+						Vec2f d(bp - ap);
+						d.normalize();
+						gl::drawVector(Vec3f(ap), Vec3f(ap + d), ap.distance(bp), _scale * w * 5.0f);
+					//}
 				}
 			}
 		}
 		_sequencesMutex.unlock();
 		gl::color(1,1,1,1);
 		
+		// Draw the objects
 		for(auto object : _objects) {
 			shared_ptr<Tangible> t = object.second;
 			if(!t->isVisible) {
@@ -267,41 +281,40 @@ namespace SecondStudy {
 					Vec2f noteRectSize(board.getSize() / Vec2f(size.first, size.second));
 					Rectf noteRect(Vec2f(0.0f, 0.0f), noteRectSize);
 					gl::drawSolidRect((noteRect + noteRectSize*Vec2f(row, col) + board.getUpperLeft()) * _scale);
-					if(t->isOn || true) {
+					if(t->isOn) {
 						gl::color(on * 1.25f);
 						gl::drawStrokedRect((noteRect + noteRectSize*Vec2f(row, col) + board.getUpperLeft()) * _scale);
+					}
+
+					// Draw icons
+					if(t->isOn) {
+						// Draw close icon
+						Rectf closeIcon = t->closeIcon * _scale;
+						gl::drawStrokedRect(closeIcon);
+						gl::lineWidth(2.0f * _scale);
+						gl::drawLine(closeIcon.getUpperLeft() + Vec2f(5.0f, 5.0f)*_scale, closeIcon.getLowerRight() + Vec2f(-5.0f, -5.0f)*_scale);
+						gl::drawLine(closeIcon.getUpperRight() + Vec2f(-5.0f, 5.0f)*_scale, closeIcon.getLowerLeft() + Vec2f(5.0f, -5.0f)*_scale);
+						gl::lineWidth(1.0f * _scale);
+
+						Rectf playIcon = t->playIcon * _scale;
+						gl::drawStrokedRect(playIcon);
+						gl::drawSolidTriangle(playIcon.getUpperLeft() + Vec2f(5.0f, 5.0f)*_scale, playIcon.getLowerLeft() + Vec2f(5.0f, -5.0f)*_scale, playIcon.getCenter() + Vec2f(5.0f, 0.0f) * _scale);
+
+						Rectf cursor = (t->cursor + t->cursorOffset.value()) * _scale;
+						gl::drawSolidRect(cursor);
 					}
 				}
 			}
 			t->notesMutex.unlock();
 
-			gl::color(on * 1.25f);
-			glLineWidth(2.0f*_scale);
-			//gl::drawStrokedRect(board*_scale);
 			gl::color(1,1,1,1);
-			/*
-			t->strokesMutex.lock();
-			list<list<Vec2f>> traces = t->strokes;
-			t->strokesMutex.unlock();
-				
-			glLineWidth(1.0f * _scale);
-			for(auto trace : traces) {
-				vector<Vec2f> v;
-				for(auto p : trace) {
-					Vec2f q(p*board.getSize()*_scale + board.getCenter()*_scale);
-					v.push_back(q);
-				}
-				if(v.size() > 2) { 
-					gl::draw(PolyLine2f(v));
-				}
-			}
-			glLineWidth(1.0f * _scale);
-			*/
+
 			gl::popModelView();
 			// POP MODEL VIEW
 		}
 		
 		// Draws traces as they go
+		_tracesMutex.lock();
 		for(auto trace : _traces) {
 			auto touchPoints = trace.second->touchPoints;
 			
@@ -324,6 +337,7 @@ namespace SecondStudy {
 			TouchPoint p = touchPoints.back();
 			gl::drawSolidCircle((p.getPos()*_s)+_do , _zoom * _scale * 2.0f);
 		}
+		_tracesMutex.unlock();
 		
 		//_params.draw();
 
@@ -364,14 +378,32 @@ namespace SecondStudy {
 						Matrix44f transform;
 						transform.translate(Vec3f(t->object.getPos()*_s+_do));
 						transform.rotate(Vec3f(0.0f, 0.0f, t->object.getAngle()));
-						Vec3f tp = transform.inverted().transformPoint(p);
+						Vec3f tp3 = transform.inverted().transformPoint(p);
 						// Let's see if the tap hit a box
-						/*Rectf box = t->isOn ? t->board * _scale : t->icon * _scale;
-						if(box.contains(Vec2f(tp.x, tp.y))) {
-							_objects[object.first]->isOn = !t->isOn;
-						}*/
-						if(tp.length() < 50.0f) {
-							_objects[object.first]->isOn = !t->isOn;
+						Vec2f tp = Vec2f(tp3.x, tp3.y);
+						if(t->isOn) {
+							Rectf closeIcon = t->closeIcon * _scale;
+							if(closeIcon.contains(tp)) {
+								t->isOn = false;
+							}
+							Rectf playIcon = t->playIcon * _scale;
+							if(playIcon.contains(tp)) {
+								console() << "Let's play tangible " << t->object.getFiducialId() << endl;
+								t->play(_noteLength);
+							}
+							Rectf board = t->board * _scale;
+							if(board.contains(tp)) {
+								Vec2f off = board.getCenter() - board.getSize()/2.0f;
+								tp -= off;
+								tp /= board.getSize();
+								tp *= Vec2i(t->size().first, t->size().second);
+								pair<int, int> n((int)tp.x, (int)tp.y);
+								t->toggle(n);
+								
+							}
+						}
+						if(tp.length() < 50.0f * _scale && !t->isOn) {
+							t->isOn = true;
 						}
 					}
 				} else if(dynamic_pointer_cast<StrokeGesture>(g) != nullptr) {
@@ -429,7 +461,7 @@ namespace SecondStudy {
 									BSpline2f l(tqs, min((int)tqs.size(), 3), false, true);
 									float totalLength = l.getLength(0,1);
 									float step = sqrt(totalLength);// 1 + log10(totalLength + 1.0f);
-									console() << "length: " << totalLength << "\tstep: " << step << endl;
+									//console() << "length: " << totalLength << "\tstep: " << step << endl;
 									transformedStroke.push_back((l.getPosition(0.0f) / Vec2f(640.0f, 480.0f)) / ((tangible->board.getSize()/Vec2f(640.0f, 480.0f))));
 									for(float p = 0.0f; p <= totalLength; p += step) {
 										Vec2f lp(l.getPosition(l.getTime(p)));
@@ -443,17 +475,20 @@ namespace SecondStudy {
 								tangible->strokes.push_back(transformedStroke);
 								tangible->strokesMutex.unlock();
 
-								set<pair<int, int>> notes;
 								pair<int, int> size = tangible->size();
+								vector<int> notes(size.first, 1000);
 								for(auto& p : transformedStroke) {
 									Vec2i q(Vec2i(Vec2f(size.first, size.second) * (p + Vec2f(0.5f, 0.5f))));
-									notes.insert(pair<int, int>(q.x, q.y));
+									if(q.x > -1 && q.x < notes.size()) {
+										notes[q.x] = min(notes[q.x], q.y);
+									}
 								}
-								for(auto n : notes) {
-									//console() << "(" << n.first << "," << n.second << ") ";
-									tangible->toggle(n);
+								for(int i = 0; i < notes.size(); i++) {
+									console() << i << ":" << notes[i] << endl;
+									if(notes[i] < 1000) {
+										tangible->toggle(pair<int, int>(i, notes[i]));
+									}
 								}
-								//console() << endl;
 							}
 						}
 						if(gestureRecognized) {
@@ -498,26 +533,33 @@ namespace SecondStudy {
 											}
 										}
 									}();
-
-									/*
-									int i = 0;
-									console() << endl << "========= " << tangible->object.getFiducialId() << " " << otherTangible->object.getFiducialId();
-									for(auto& seq : _sequences) {
-										console() << endl << i++ << " ---" << endl;
-										for(auto& t : seq) {
-											console() << "   " << t->object.getFiducialId() << " ";
-										}
-									}
-									console() << endl;
-									*/
 									_sequencesMutex.unlock();
-									
 								}
 							}
 						}
 						if(gestureRecognized) {
 							goto theMoon;
 						}
+
+						// CUTTING STROKE
+						_sequencesMutex.lock();
+						for(auto& s : _sequences) {
+							if(s.size() > 1) {
+								for(auto it = s.begin(); it != prev(s.end()); ++it) {
+									shared_ptr<Tangible> at = *it;
+									shared_ptr<Tangible> bt = *(next(it));
+									Vec2f a = at->object.getPos() * _s + _do;
+									Vec2f b = bt->object.getPos() * _s + _do;
+									Vec2f c = Vec2f(front.x, front.y);
+									Vec2f d = Vec2f(back.x, back.y);
+
+									console() << at->object.getFiducialId() << " : " << a.x << " :: " << a.y << endl;
+									console() << "d : " << d.x << " :: " << d.y << endl;
+								}
+							}
+						}
+						_sequencesMutex.unlock();
+
 					}
 				} else {
 					console() << "Unknown gesture..." << endl;
@@ -608,17 +650,23 @@ namespace SecondStudy {
 	}
 
 	void TheApp::cursorAdded(tuio::Cursor cursor) {
+		_tracesMutex.lock();
 		_traces[cursor.getSessionId()] = make_shared<TouchTrace>();
 		_traces[cursor.getSessionId()]->addCursorDown(cursor);
+		_tracesMutex.unlock();
 	}
 
 	void TheApp::cursorUpdated(tuio::Cursor cursor) {
+		_tracesMutex.lock();
 		_traces[cursor.getSessionId()]->addCursorDown(cursor);
+		_tracesMutex.unlock();
 	}
 
 	void TheApp::cursorRemoved(tuio::Cursor cursor) {
+		_tracesMutex.lock();
 		_traces[cursor.getSessionId()]->addCursorUp(cursor);
 		_traces[cursor.getSessionId()]->isVisible = false;
+		_tracesMutex.unlock();
 		//_traces.erase(cursor.getSessionId());
 		// Well, that was abrupt.
 	}
@@ -630,6 +678,7 @@ namespace SecondStudy {
 		} else {
 			_objects[object.getFiducialId()] = make_shared<Tangible>();
 			_objects[object.getFiducialId()]->object = object;
+			_objects[object.getFiducialId()]->sender(_sender);
 		}
 		
 		_sequencesMutex.lock();
@@ -637,18 +686,6 @@ namespace SecondStudy {
 		l.push_back(_objects[object.getFiducialId()]);
 		_sequences.push_back(l);
 		_sequencesMutex.unlock();
-
-		/*
-		int i = 0;
-		console() << endl << "=========";
-		for(auto seq : _sequences) {
-			console() << endl << i++ << " ---" << endl;
-			for(auto t : seq) {
-				console() << "   " << t->object.getFiducialId() << " ";
-			}
-		}
-		console() << endl;
-		*/
 	}
 
 	void TheApp::objectUpdated(tuio::Object object) {
@@ -659,6 +696,7 @@ namespace SecondStudy {
 		_objects[object.getFiducialId()]->object = object;
 		_objects[object.getFiducialId()]->isVisible = false;
 
+		/*
 		_sequencesMutex.lock();
 		for(auto sit = _sequences.begin(); sit != _sequences.end(); ++sit) {
 			sit->remove_if([&](shared_ptr<Tangible> t) {
@@ -666,6 +704,7 @@ namespace SecondStudy {
 			});
 		}
 		_sequencesMutex.unlock();
+		*/
 	}
 
 	Vec2f TheApp::tuioToWorld(Vec2f p) {
