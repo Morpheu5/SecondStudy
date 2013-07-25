@@ -212,15 +212,13 @@ namespace SecondStudy {
 				for(auto it = s.begin(); it != prev(s.end()); ++it) {
 					shared_ptr<Tangible> a = *it;
 					shared_ptr<Tangible> b = *(next(it));
-					//if(a->isVisible && b->isVisible) {
-						Vec2f ap = a->object.getPos() * _s + _do;
-						Vec2f bp = b->object.getPos() * _s + _do;
-						float w = 1.0f / log(1 + ap.distance(bp) / 100.0f);
-						gl::color(w, w, w, 1.0f); // doubtfully useful on a proper video card...
-						Vec2f d(bp - ap);
-						d.normalize();
-						gl::drawVector(Vec3f(ap), Vec3f(ap + d), ap.distance(bp), _scale * w * 5.0f);
-					//}
+					Vec2f ap = a->object.getPos() * _s + _do;
+					Vec2f bp = b->object.getPos() * _s + _do;
+					float w = 1.0f / log(1 + ap.distance(bp) / 100.0f);
+					gl::color(w, w, w, 1.0f); // doubtfully useful on a proper video card...
+					Vec2f d(bp - ap);
+					d.normalize();
+					gl::drawVector(Vec3f(ap), Vec3f(ap + d), ap.distance(bp), _scale * w * 5.0f);
 				}
 			}
 		}
@@ -460,8 +458,7 @@ namespace SecondStudy {
 								if(tqs.size() > 2) {
 									BSpline2f l(tqs, min((int)tqs.size(), 3), false, true);
 									float totalLength = l.getLength(0,1);
-									float step = sqrt(totalLength);// 1 + log10(totalLength + 1.0f);
-									//console() << "length: " << totalLength << "\tstep: " << step << endl;
+									float step = sqrt(totalLength);
 									transformedStroke.push_back((l.getPosition(0.0f) / Vec2f(640.0f, 480.0f)) / ((tangible->board.getSize()/Vec2f(640.0f, 480.0f))));
 									for(float p = 0.0f; p <= totalLength; p += step) {
 										Vec2f lp(l.getPosition(l.getTime(p)));
@@ -543,21 +540,44 @@ namespace SecondStudy {
 
 						// CUTTING STROKE
 						_sequencesMutex.lock();
-						for(auto& s : _sequences) {
-							if(s.size() > 1) {
-								for(auto it = s.begin(); it != prev(s.end()); ++it) {
-									shared_ptr<Tangible> at = *it;
-									shared_ptr<Tangible> bt = *(next(it));
-									Vec2f a = at->object.getPos() * _s + _do;
-									Vec2f b = bt->object.getPos() * _s + _do;
-									Vec2f c = Vec2f(front.x, front.y);
-									Vec2f d = Vec2f(back.x, back.y);
+						[&, this]() {
+							for(auto& s : _sequences) {
+								if(s.size() > 1) {
+									for(auto it = s.begin(); it != prev(s.end()); ++it) {
+										shared_ptr<Tangible> at = *it;
+										shared_ptr<Tangible> bt = *(next(it));
+										Vec2f a = at->object.getPos() * _s + _do;
+										Vec2f b = bt->object.getPos() * _s + _do;
+										Vec2f c = Vec2f(front.x, front.y) + _uo;
+										Vec2f d = Vec2f(back.x, back.y) + _uo;
 
-									console() << at->object.getFiducialId() << " : " << a.x << " :: " << a.y << endl;
-									console() << "d : " << d.x << " :: " << d.y << endl;
+										// If A1 o A2 are INF, then they are both vetical...
+										float A1 = (a.y - b.y) / (a.x - b.x);
+										float A2 = (c.y - d.y) / (c.x - d.x);
+										float b1 = a.y - A1 * a.x;
+										float b2 = c.y - A2 * c.x;
+
+										if(abs(A1 - A2) > FLT_EPSILON) {
+											float px = (b2 - b1) / (A1 - A2);
+											Vec2f p(px, A1 * px + b1);
+
+											// Now, to see if p is contained within both bounding boxes...
+											Rectf ab(min(a.x, b.x), min(a.y, b.y), max(a.x, b.x), max(a.y, b.y));
+											Rectf cd(min(c.x, d.x), min(c.y, d.y), max(c.x, d.x), max(c.y, d.y));
+											if(ab.contains(p) && cd.contains(p)) {
+												gestureRecognized = true;
+												// Now, the connection goes from a to b, so b becomes a new sequence
+												console() << at->object.getFiducialId() << " -> " << bt->object.getFiducialId() << endl;
+												list<shared_ptr<Tangible>> ns;
+												ns.splice(ns.end(), s, next(it), s.end());
+												_sequences.push_back(ns);
+												return;
+											}
+										}
+									}
 								}
 							}
-						}
+						}();
 						_sequencesMutex.unlock();
 
 					}
