@@ -37,6 +37,7 @@ public:
 	tuio::Object object;
 	bool isOn;
 	bool isVisible;
+	double timeRemoved;
 	Rectf icon;
 	Rectf board;
 	Rectf closeIcon;
@@ -57,6 +58,8 @@ public:
 
 		isOn = false;
 		isVisible = true;
+		timeRemoved = app::getElapsedSeconds();
+		app::console() << "Creating object at " << timeRemoved << " seconds" << endl;
 
 		icon = Rectf(Vec2f(30.0f, -15.0f), Vec2f(60.0f, 15.0f));
 		board = Rectf(Vec2f(30.0f, -50.0f), Vec2f(190.0f, 50.0f));

@@ -146,57 +146,16 @@ namespace SecondStudy {
 			_finishedTraces.pop_front();
 		}
 
-		/* This should automatically create sequences based on proximity but it doesn't work all that well...
 		for(auto& o : _objects) {
 			shared_ptr<Tangible> t = o.second;
-			vector<shared_ptr<Tangible>> N = getNeighbors(t);
-			if(N.size() == 0) {
-				_sequencesMutex.lock();
-				_sequences[t->object.getFiducialId()] = t;
-				_sequencesMutex.unlock();
-			} else if(N.size() == 1) {
-				shared_ptr<Tangible> n = N[0];
-				if(t->next != n) {
-					_sequencesMutex.lock();
-					if(_sequences[n->object.getFiducialId()] != nullptr) { // n.isHead
-						t->setNext(n);
-						_sequences.erase(n->object.getFiducialId());
-						_sequences[t->object.getFiducialId()] = t;
-					} else { // must be tail
-						n->setNext(t);
-					}
-					_sequencesMutex.unlock();
-				}
-			} else { // N.size() > 1
-				shared_ptr<Tangible> n = N[0]; // n is the closest
-				shared_ptr<Tangible> m = N[1];
-				if(!(t->next == n || t->next == m || n->next == t || m->next == t)) {
-					// t is not in a sequence longer than 1
-					if(n->next !=m && m->next != n) { // t is between two distinct sequences
-						_sequencesMutex.lock();
-						if(_sequences[n->object.getFiducialId()] != nullptr) { // n.isHead
-							t->setNext(n);
-							_sequences.erase(n->object.getFiducialId());
-							_sequences[t->object.getFiducialId()] = t;
-						} else if(n->prev != nullptr && n->next == nullptr) { // n.isTail
-							n->setNext(t);
-						} else {
-							_sequences[t->object.getFiducialId()] = t;
-						}
-						_sequencesMutex.unlock();
-					}
-				} else { // n and m belong to the same sequence
-					if(m->next == n) {
-						t->setNext(n);
-						m->setNext(t);
-					} else { // n->next == m
-						t->setNext(m);
-						n->setNext(t);
-					}
-				}
+			_sequencesMutex.lock();
+			for(auto& s : _sequences) {
+				s.remove_if( [this](shared_ptr<Tangible> u) {
+					return !u->isVisible && (getElapsedSeconds() - u->timeRemoved) > 1.0f;
+				});
 			}
+			_sequencesMutex.unlock();
 		}
-		*/
 	}
 
 	void TheApp::draw() {
@@ -715,16 +674,7 @@ namespace SecondStudy {
 	void TheApp::objectRemoved(tuio::Object object) {
 		_objects[object.getFiducialId()]->object = object;
 		_objects[object.getFiducialId()]->isVisible = false;
-
-		/*
-		_sequencesMutex.lock();
-		for(auto sit = _sequences.begin(); sit != _sequences.end(); ++sit) {
-			sit->remove_if([&](shared_ptr<Tangible> t) {
-				return t == _objects[object.getFiducialId()];
-			});
-		}
-		_sequencesMutex.unlock();
-		*/
+		_objects[object.getFiducialId()]->timeRemoved = getElapsedSeconds();
 	}
 
 	Vec2f TheApp::tuioToWorld(Vec2f p) {
