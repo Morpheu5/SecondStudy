@@ -54,6 +54,8 @@ namespace SecondStudy {
 
 		CueRef _cue;
 
+		bool _editMode;
+
 	public:
 		void setup();
 		void shutdown();
@@ -114,6 +116,8 @@ namespace SecondStudy {
 		_noteLength = 0.25f;
 		_currentNote = 0;
 
+		_editMode = true;
+
 		_sender = make_shared<osc::Sender>();
 		_sender->setup("localhost", 3000);
 	}
@@ -124,6 +128,7 @@ namespace SecondStudy {
 	}
 	
 	void TheApp::update() {
+		console() << getElapsedSeconds() << (_editMode ? " Edit" : " Play") << endl;
 		_sequencesMutex.lock();
 		_sequences.remove_if( [](list<shared_ptr<Tangible>> l) {
 			return l.empty();
@@ -148,13 +153,24 @@ namespace SecondStudy {
 
 		for(auto& o : _objects) {
 			shared_ptr<Tangible> t = o.second;
-			_sequencesMutex.lock();
-			for(auto& s : _sequences) {
-				s.remove_if( [this](shared_ptr<Tangible> u) {
-					return !u->isVisible && (getElapsedSeconds() - u->timeRemoved) > 1.0f;
-				});
+			switch(t->object.getFiducialId()) {
+			case 0: {
+				if(!t->isVisible && (getElapsedSeconds() - t->timeRemoved) > 1.0f) {
+					_editMode = true;
+				}
+				break;
 			}
-			_sequencesMutex.unlock();
+			default: {
+				_sequencesMutex.lock();
+				for(auto& s : _sequences) {
+					s.remove_if( [this](shared_ptr<Tangible> u) {
+						return !u->isVisible && (getElapsedSeconds() - u->timeRemoved) > 1.0f;
+					});
+				}
+				_sequencesMutex.unlock();
+				break;
+			}
+			}
 		}
 	}
 
@@ -199,70 +215,65 @@ namespace SecondStudy {
 			transform.rotate(Vec3f(0.0f, 0.0f, t->object.getAngle()));
 			gl::multModelView(transform);
 
-			/*
-			_sequencesMutex.lock();
-			for(auto& seq : _sequences) {
-				if(t == seq.front()) {
-					gl::color(0,1,0,1);
-					break;
-				} else if(t == seq.back()) {
-					gl::color(0,0,1,1);
-					break;
-				} else {
-					gl::color(1,1,1,1);
-					//break;
-				}
+			switch(t->object.getFiducialId()) {
+			case 0: {
+				gl::color(0.25f, 0.5f, 1.0f, 1.0f);
+				gl::drawSolidCircle(Vec2f(0,0), 30.0f*_scale);
+				break;
 			}
-			_sequencesMutex.unlock();
-			*/
-			gl::drawSolidRect(Rectf(-20.0f*_scale, -20.0f*_scale, 20.0f*_scale, 20.0f*_scale));
+			default: {
+				gl::drawSolidRect(Rectf(-20.0f*_scale, -20.0f*_scale, 20.0f*_scale, 20.0f*_scale));
 
-			gl::color(0.2f, 0.2f, 0.2f, 1.0f);
-			gl::drawSolidCircle(Vec2f(0,0), 50.0f*_scale);
-			gl::color(1,1,1,1);
+				gl::color(0.2f, 0.2f, 0.2f, 1.0f);
+				gl::drawSolidCircle(Vec2f(0,0), 50.0f*_scale);
+				gl::color(1,1,1,1);
 
-			Rectf board = t->isOn ? t->board : t->icon;
+				Rectf board = t->isOn ? t->board : t->icon;
 
-			t->notesMutex.lock();
-			pair<int, int> size = t->size();
-			ColorAf off(0.25f, 0.25f, 0.25f, 1.0f);
-			ColorAf on(0.5f, 0.5f, 0.5f, 1.0f);
-			for(int row = 0; row < size.first; row++) {
-				for(int col = 0; col < size.second; col++) {
-					if(t->notes[row][col]) {
-						gl::color(on);
-					} else {
-						gl::color(off);
-					}
+				t->notesMutex.lock();
+				pair<int, int> size = t->size();
+				ColorAf off(0.25f, 0.25f, 0.25f, 1.0f);
+				ColorAf on(0.5f, 0.5f, 0.5f, 1.0f);
+				for(int row = 0; row < size.first; row++) {
+					for(int col = 0; col < size.second; col++) {
+						if(t->notes[row][col]) {
+							gl::color(on);
+						} else {
+							gl::color(off);
+						}
 
-					Vec2f noteRectSize(board.getSize() / Vec2f(size.first, size.second));
-					Rectf noteRect(Vec2f(0.0f, 0.0f), noteRectSize);
-					gl::drawSolidRect((noteRect + noteRectSize*Vec2f(row, col) + board.getUpperLeft()) * _scale);
-					if(t->isOn) {
-						gl::color(on * 1.25f);
-						gl::drawStrokedRect((noteRect + noteRectSize*Vec2f(row, col) + board.getUpperLeft()) * _scale);
-					}
+						Vec2f noteRectSize(board.getSize() / Vec2f(size.first, size.second));
+						Rectf noteRect(Vec2f(0.0f, 0.0f), noteRectSize);
+						gl::drawSolidRect((noteRect + noteRectSize*Vec2f(row, col) + board.getUpperLeft()) * _scale);
+						if(t->isOn) {
+							gl::color(on * 1.25f);
+							gl::drawStrokedRect((noteRect + noteRectSize*Vec2f(row, col) + board.getUpperLeft()) * _scale);
+						}
 
-					// Draw icons
-					if(t->isOn) {
-						// Draw close icon
-						Rectf closeIcon = t->closeIcon * _scale;
-						gl::drawStrokedRect(closeIcon);
-						gl::lineWidth(2.0f * _scale);
-						gl::drawLine(closeIcon.getUpperLeft() + Vec2f(5.0f, 5.0f)*_scale, closeIcon.getLowerRight() + Vec2f(-5.0f, -5.0f)*_scale);
-						gl::drawLine(closeIcon.getUpperRight() + Vec2f(-5.0f, 5.0f)*_scale, closeIcon.getLowerLeft() + Vec2f(5.0f, -5.0f)*_scale);
-						gl::lineWidth(1.0f * _scale);
+						// Draw icons
+						if(t->isOn) {
+							// Draw close icon
+							Rectf closeIcon = t->closeIcon * _scale;
+							gl::drawStrokedRect(closeIcon);
+							gl::lineWidth(2.0f * _scale);
+							gl::drawLine(closeIcon.getUpperLeft() + Vec2f(5.0f, 5.0f)*_scale, closeIcon.getLowerRight() + Vec2f(-5.0f, -5.0f)*_scale);
+							gl::drawLine(closeIcon.getUpperRight() + Vec2f(-5.0f, 5.0f)*_scale, closeIcon.getLowerLeft() + Vec2f(5.0f, -5.0f)*_scale);
+							gl::lineWidth(1.0f * _scale);
 
-						Rectf playIcon = t->playIcon * _scale;
-						gl::drawStrokedRect(playIcon);
-						gl::drawSolidTriangle(playIcon.getUpperLeft() + Vec2f(5.0f, 5.0f)*_scale, playIcon.getLowerLeft() + Vec2f(5.0f, -5.0f)*_scale, playIcon.getCenter() + Vec2f(5.0f, 0.0f) * _scale);
+							Rectf playIcon = t->playIcon * _scale;
+							gl::drawStrokedRect(playIcon);
+							gl::drawSolidTriangle(playIcon.getUpperLeft() + Vec2f(5.0f, 5.0f)*_scale, playIcon.getLowerLeft() + Vec2f(5.0f, -5.0f)*_scale, playIcon.getCenter() + Vec2f(5.0f, 0.0f) * _scale);
 
-						Rectf cursor = (t->cursor + t->cursorOffset.value()) * _scale;
-						gl::drawSolidRect(cursor);
+							Rectf cursor = (t->cursor + t->cursorOffset.value()) * _scale;
+							gl::drawSolidRect(cursor);
+						}
 					}
 				}
+				t->notesMutex.unlock();
+
+				break;
 			}
-			t->notesMutex.unlock();
+			}
 
 			gl::color(1,1,1,1);
 
@@ -659,12 +670,16 @@ namespace SecondStudy {
 			_objects[object.getFiducialId()]->object = object;
 			_objects[object.getFiducialId()]->sender(_sender);
 		}
-		
-		_sequencesMutex.lock();
-		list<shared_ptr<Tangible>> l;
-		l.push_back(_objects[object.getFiducialId()]);
-		_sequences.push_back(l);
-		_sequencesMutex.unlock();
+
+		if(object.getFiducialId() == 0) {
+			_editMode = false;
+		} else {
+			_sequencesMutex.lock();
+			list<shared_ptr<Tangible>> l;
+			l.push_back(_objects[object.getFiducialId()]);
+			_sequences.push_back(l);
+			_sequencesMutex.unlock();
+		}
 	}
 
 	void TheApp::objectUpdated(tuio::Object object) {
