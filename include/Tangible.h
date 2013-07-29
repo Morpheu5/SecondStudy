@@ -13,15 +13,14 @@ namespace SecondStudy {
 
 class Tangible : public std::enable_shared_from_this<Tangible> {
 	pair<int, int> _size;
-	//int _currentNote;
 	vector<int> _midiNotes;
 	CueRef _cue;
 	shared_ptr<osc::Sender> _sender;
 	TimelineRef _timeline;
 
 	void _play(int currentNote) {
-		app::console() << "Playing note " << currentNote << " of tangible " << object.getFiducialId() << endl;
-		app::console() << "cursor at (" << cursorOffset.value().x << ", " << cursorOffset.value().y << ")" << endl;
+		//app::console() << "Playing note " << currentNote << " of tangible " << object.getFiducialId() << endl;
+		//app::console() << "cursor at (" << cursorOffset.value().x << ", " << cursorOffset.value().y << ")" << endl;
 
 		for(int i = 0; i < _size.second; i++) {
 			if(notes[currentNote][i]) {
@@ -59,7 +58,6 @@ public:
 		isOn = false;
 		isVisible = true;
 		timeRemoved = app::getElapsedSeconds();
-		app::console() << "Creating object at " << timeRemoved << " seconds" << endl;
 
 		icon = Rectf(Vec2f(30.0f, -15.0f), Vec2f(60.0f, 15.0f));
 		board = Rectf(Vec2f(30.0f, -50.0f), Vec2f(190.0f, 50.0f));

@@ -56,6 +56,10 @@ namespace SecondStudy {
 
 		bool _editMode;
 
+		vector<shared_ptr<Tangible>> _nowPlaying;
+		mutex _nowPlayingMutex;
+		CueRef _playModeTimeline;
+
 	public:
 		void setup();
 		void shutdown();
@@ -82,7 +86,7 @@ namespace SecondStudy {
 
 		vector<shared_ptr<Tangible>> getNeighbors(shared_ptr<Tangible> t);
 
-		//void playTangible(int id);
+		void playCycle();
 	};
 
 	void TheApp::setup() {
@@ -128,7 +132,6 @@ namespace SecondStudy {
 	}
 	
 	void TheApp::update() {
-		console() << getElapsedSeconds() << (_editMode ? " Edit" : " Play") << endl;
 		_sequencesMutex.lock();
 		_sequences.remove_if( [](list<shared_ptr<Tangible>> l) {
 			return l.empty();
@@ -157,6 +160,8 @@ namespace SecondStudy {
 			case 0: {
 				if(!t->isVisible && (getElapsedSeconds() - t->timeRemoved) > 1.0f) {
 					_editMode = true;
+					_playModeTimeline->setLoop(false);
+					_playModeTimeline->removeSelf();
 				}
 				break;
 			}
@@ -172,6 +177,40 @@ namespace SecondStudy {
 			}
 			}
 		}
+	}
+
+	void TheApp::playCycle() {
+		//console() << "Play cycle" << endl;
+		_nowPlayingMutex.lock();
+		// for all in _nowPlaying, play them
+		for(auto t : _nowPlaying) {
+			//console() << t->object.getFiducialId() << " ";
+			t->play(_noteLength);
+		}
+		console() << endl;
+		_sequencesMutex.lock();
+		for(int i = 0; i < _nowPlaying.size(); i++) {
+			shared_ptr<Tangible> t = _nowPlaying[i];
+			for(auto &s : _sequences) {
+				for(auto uit = s.begin(); uit != s.end(); ++uit) {
+					shared_ptr<Tangible> u = *uit;
+					if(t == u) {
+						if(next(uit) == s.end()) {
+							_nowPlaying[i] = s.front();
+						} else {
+							_nowPlaying[i] = *(next(uit));
+						}
+					}
+				}
+			}
+			
+		}
+		// TODO change _nowPlaying upon connections and disconnections
+		// TODO this moves the _nowPlaying to the "next up", thus the drawing is incorrect
+		//      - Maybe have a _nowPlaying for the actual currently playing objects, and
+		//        a _nextPlaying to operate on? Sounds complicated, though.
+		_sequencesMutex.unlock();
+		_nowPlayingMutex.unlock();
 	}
 
 	void TheApp::draw() {
@@ -222,11 +261,17 @@ namespace SecondStudy {
 				break;
 			}
 			default: {
-				gl::drawSolidRect(Rectf(-20.0f*_scale, -20.0f*_scale, 20.0f*_scale, 20.0f*_scale));
+				//gl::drawSolidRect(Rectf(-20.0f*_scale, -20.0f*_scale, 20.0f*_scale, 20.0f*_scale));
 
 				gl::color(0.2f, 0.2f, 0.2f, 1.0f);
 				gl::drawSolidCircle(Vec2f(0,0), 50.0f*_scale);
 				gl::color(1,1,1,1);
+
+				_nowPlayingMutex.lock();
+				if(find(_nowPlaying.begin(), _nowPlaying.end(), t) != _nowPlaying.end()) {
+					gl::drawStrokedCircle(Vec2f(0,0), 60.0f*_scale);
+				}
+				_nowPlayingMutex.unlock();
 
 				Rectf board = t->isOn ? t->board : t->icon;
 
@@ -356,7 +401,6 @@ namespace SecondStudy {
 							}
 							Rectf playIcon = t->playIcon * _scale;
 							if(playIcon.contains(tp)) {
-								console() << "Let's play tangible " << t->object.getFiducialId() << endl;
 								t->play(_noteLength);
 							}
 							Rectf board = t->board * _scale;
@@ -673,6 +717,21 @@ namespace SecondStudy {
 
 		if(object.getFiducialId() == 0) {
 			_editMode = false;
+			// Play mode! Set the _nowPlaying vector to contain all the sequences heads
+			_nowPlayingMutex.lock();
+			_nowPlaying.clear();
+			_sequencesMutex.lock();
+			for(auto& s : _sequences) {
+				_nowPlaying.push_back(s.front());
+			}
+			_sequencesMutex.unlock();
+			_nowPlayingMutex.unlock();
+
+			// Now get the play mode started!
+			// TODO Parametrize bar size
+			_playModeTimeline = timeline().add( bind(&TheApp::playCycle, this), timeline().getCurrentTime());
+			_playModeTimeline->setDuration(_noteLength * 8);
+			_playModeTimeline->setLoop(true);
 		} else {
 			_sequencesMutex.lock();
 			list<shared_ptr<Tangible>> l;
