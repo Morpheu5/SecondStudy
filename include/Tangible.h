@@ -11,7 +11,7 @@ using namespace std;
 
 namespace SecondStudy {
 
-class Tangible : public std::enable_shared_from_this<Tangible> {
+    class Tangible : public std::enable_shared_from_this<Tangible> {
 	pair<int, int> _size;
 	vector<int> _midiNotes;
 	CueRef _cue;
@@ -19,9 +19,6 @@ class Tangible : public std::enable_shared_from_this<Tangible> {
 	TimelineRef _timeline;
 
 	void _play(int currentNote) {
-		//app::console() << "Playing note " << currentNote << " of tangible " << object.getFiducialId() << endl;
-		//app::console() << "cursor at (" << cursorOffset.value().x << ", " << cursorOffset.value().y << ")" << endl;
-
 		for(int i = 0; i < _size.second; i++) {
 			if(notes[currentNote][i]) {
 				osc::Message m;
@@ -84,10 +81,13 @@ public:
 			if(notes[note.first][note.second]) {
 				notes[note.first][note.second] = false;
 			} else {
-				for(auto &n : notes[note.first]) {
-					n = false;
-				}
-				notes[note.first][note.second] = !notes[note.first][note.second];
+				/*for(int i = 0; i < notes[note.first].size(); i++) {
+					notes[note.first][i] = false;
+				}*/
+                for(auto a : notes[note.first]) {
+                    a = false;
+                }
+				notes[note.first][note.second] = true;
 			}
 		}
 	}
