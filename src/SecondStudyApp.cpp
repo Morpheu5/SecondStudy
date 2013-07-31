@@ -58,6 +58,8 @@ namespace SecondStudy {
 
 		vector<shared_ptr<Tangible>> _nowPlaying;
 		mutex _nowPlayingMutex;
+		vector<shared_ptr<Tangible>> _nextPlaying;
+		mutex _nextPlayingMutex;
 		CueRef _playModeTimeline;
 
 	public:
@@ -181,24 +183,29 @@ namespace SecondStudy {
 
 	void TheApp::playCycle() {
 		//console() << "Play cycle" << endl;
+		_nextPlayingMutex.lock();
 		_nowPlayingMutex.lock();
-		// for all in _nowPlaying, play them
+		_nowPlaying = _nextPlaying;
+		_nowPlayingMutex.unlock();
+
+		// for all in _nextPlaying, play them
 		for(auto t : _nowPlaying) {
 			//console() << t->object.getFiducialId() << " ";
+			// in my example (4 + 4, connect tail-head), the second iteration hits an empty pointer.
 			t->play(_noteLength);
 		}
 		console() << endl;
 		_sequencesMutex.lock();
-		for(int i = 0; i < _nowPlaying.size(); i++) {
-			shared_ptr<Tangible> t = _nowPlaying[i];
+		for(int i = 0; i < _nextPlaying.size(); i++) {
+			shared_ptr<Tangible> t = _nextPlaying[i];
 			for(auto &s : _sequences) {
 				for(auto uit = s.begin(); uit != s.end(); ++uit) {
 					shared_ptr<Tangible> u = *uit;
 					if(t == u) {
 						if(next(uit) == s.end()) {
-							_nowPlaying[i] = s.front();
+							_nextPlaying[i] = s.front();
 						} else {
-							_nowPlaying[i] = *(next(uit));
+							_nextPlaying[i] = *(next(uit));
 						}
 					}
 				}
@@ -206,11 +213,8 @@ namespace SecondStudy {
 			
 		}
 		// TODO change _nowPlaying upon connections and disconnections
-		// TODO this moves the _nowPlaying to the "next up", thus the drawing is incorrect
-		//      - Maybe have a _nowPlaying for the actual currently playing objects, and
-		//        a _nextPlaying to operate on? Sounds complicated, though.
 		_sequencesMutex.unlock();
-		_nowPlayingMutex.unlock();
+		_nextPlayingMutex.unlock();
 	}
 
 	void TheApp::draw() {
@@ -267,11 +271,13 @@ namespace SecondStudy {
 				gl::drawSolidCircle(Vec2f(0,0), 50.0f*_scale);
 				gl::color(1,1,1,1);
 
-				_nowPlayingMutex.lock();
-				if(find(_nowPlaying.begin(), _nowPlaying.end(), t) != _nowPlaying.end()) {
-					gl::drawStrokedCircle(Vec2f(0,0), 60.0f*_scale);
+				if(!_editMode) {
+					_nowPlayingMutex.lock();
+					if(find(_nowPlaying.begin(), _nowPlaying.end(), t) != _nowPlaying.end()) {
+						gl::drawStrokedCircle(Vec2f(0,0), 60.0f*_scale);
+					}
+					_nowPlayingMutex.unlock();
 				}
-				_nowPlayingMutex.unlock();
 
 				Rectf board = t->isOn ? t->board : t->icon;
 
@@ -527,14 +533,24 @@ namespace SecondStudy {
 														}
 													}
 													// cover the head case because of reverse iterator madness
-													if(*(sit->begin()) == otherTangible) {
+													if(sit->front() == otherTangible) {
 														return;
 													}
-													if(*(sit->begin()) != otherTangible) { // prevents tail-head loops
+													if(sit->front() != otherTangible) { // prevents tail-head loops
 														for(auto nsit = _sequences.begin(); nsit != _sequences.end(); ++nsit) {
 															for(auto nlit = nsit->begin(); nlit != nsit->end(); ++nlit) {
 																if(*nlit == otherTangible) {
 																	nsit->splice(nlit, *sit, sit->begin(), next(lit));
+																	// TODO some magic here to prevent double cursors
+																	// Just need to figure what's going on here exactly
+																	//_nowPlayingMutex.lock();
+																	_nextPlayingMutex.lock();
+																	for(auto it = nlit; it != nsit->end(); ++it) {
+																		//remove(_nowPlaying.begin(), _nowPlaying.end(), *it);
+																		remove(_nextPlaying.begin(), _nextPlaying.end(), *it);
+																	}
+																	_nextPlayingMutex.unlock();
+																	//_nowPlayingMutex.unlock();
 																	return;
 																}
 															}
@@ -580,11 +596,17 @@ namespace SecondStudy {
 											Rectf cd(min(c.x, d.x), min(c.y, d.y), max(c.x, d.x), max(c.y, d.y));
 											if(ab.contains(p) && cd.contains(p)) {
 												gestureRecognized = true;
-												// Now, the connection goes from a to b, so b becomes a new sequence
+												// Now, the connection goes from a to b, so b begins a new sequence
 												console() << at->object.getFiducialId() << " -> " << bt->object.getFiducialId() << endl;
 												list<shared_ptr<Tangible>> ns;
 												ns.splice(ns.end(), s, next(it), s.end());
 												_sequences.push_back(ns);
+												_nextPlayingMutex.lock();
+												// if(find(_nowPlaying.begin(), _nowPlaying.end(), t) != _nowPlaying.end()) {
+												if(find(_nextPlaying.begin(), _nextPlaying.end(), s.front()) == _nextPlaying.end()) {
+													_nextPlaying.push_back(s.front());
+												}
+												_nextPlayingMutex.unlock();
 												return;
 											}
 										}
@@ -717,15 +739,15 @@ namespace SecondStudy {
 
 		if(object.getFiducialId() == 0) {
 			_editMode = false;
-			// Play mode! Set the _nowPlaying vector to contain all the sequences heads
-			_nowPlayingMutex.lock();
-			_nowPlaying.clear();
+			// Play mode! Set the _nextPlaying vector to contain all the sequences heads
+			_nextPlayingMutex.lock();
+			_nextPlaying.clear();
 			_sequencesMutex.lock();
 			for(auto& s : _sequences) {
-				_nowPlaying.push_back(s.front());
+				_nextPlaying.push_back(s.front());
 			}
 			_sequencesMutex.unlock();
-			_nowPlayingMutex.unlock();
+			_nextPlayingMutex.unlock();
 
 			// Now get the play mode started!
 			// TODO Parametrize bar size
