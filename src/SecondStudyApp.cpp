@@ -378,7 +378,7 @@ namespace SecondStudy {
 		// TODO busy waiting is for whimps. Counting semaphore or signal queue, maybe?
 		Vec2f _do;
 		while(true) {
-			_do = _o + _uo;
+			_do = _o;// + _uo;
 			if(_gestureProcessorShouldStop) {
 				return;
 			}

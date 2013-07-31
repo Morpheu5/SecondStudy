@@ -81,9 +81,6 @@ public:
 			if(notes[note.first][note.second]) {
 				notes[note.first][note.second] = false;
 			} else {
-				/*for(int i = 0; i < notes[note.first].size(); i++) {
-					notes[note.first][i] = false;
-				}*/
                 for(auto a : notes[note.first]) {
                     a = false;
                 }
